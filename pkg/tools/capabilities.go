@@ -46,6 +46,11 @@ type Elicitable interface {
 	SetElicitationHandler(handler ElicitationHandler)
 }
 
+// Samplable is implemented by toolsets that support MCP sampling.
+type Samplable interface {
+	SetCreateMessageHandler(handler CreateMessageHandler)
+}
+
 // OAuthCapable is implemented by toolsets that support OAuth flows.
 type OAuthCapable interface {
 	SetOAuthSuccessHandler(handler func())

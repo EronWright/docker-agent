@@ -150,6 +150,9 @@ func (p *chatPage) handleRuntimeEvent(msg tea.Msg) (bool, tea.Cmd) {
 
 	case *runtime.ElicitationRequestEvent:
 		return true, p.handleElicitationRequest(msg)
+
+	case *runtime.SamplingRequestEvent:
+		return true, p.handleSamplingRequest(msg)
 	}
 
 	return false, nil
@@ -372,6 +375,13 @@ func (p *chatPage) handleElicitationRequest(msg *runtime.ElicitationRequestEvent
 }
 
 // isSuccessfulStop returns true when the stream reason indicates a
+func (p *chatPage) handleSamplingRequest(msg *runtime.SamplingRequestEvent) tea.Cmd {
+	return tea.Batch(
+		p.messages.AddShellOutputMessage("[MCP sampling] LLM completion requested by server"),
+		p.messages.ScrollToBottom(),
+	)
+}
+
 // normal completion that warrants the success sound. Empty reason
 // (e.g. cache hits, early exits before a turn runs) is treated as
 // success to preserve backward compatibility.

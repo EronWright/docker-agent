@@ -826,7 +826,7 @@ func (r *LocalRuntime) getTools(ctx context.Context, a *agent.Agent, sessionSpan
 	return agentTools, nil
 }
 
-// configureToolsetHandlers sets up elicitation and OAuth handlers for all toolsets of an agent.
+// configureToolsetHandlers sets up elicitation, sampling, and OAuth handlers for all toolsets of an agent.
 func (r *LocalRuntime) configureToolsetHandlers(a *agent.Agent, events EventSink) {
 	for _, toolset := range a.ToolSets() {
 		tools.ConfigureHandlers(toolset,
@@ -834,6 +834,10 @@ func (r *LocalRuntime) configureToolsetHandlers(a *agent.Agent, events EventSink
 			func() { events.Emit(Authorization(tools.ElicitationActionAccept, a.Name())) },
 			r.managedOAuth,
 		)
+
+		if s, ok := tools.As[tools.Samplable](toolset); ok {
+			s.SetCreateMessageHandler(r.createMessageHandler)
+		}
 
 		// Wire RAG event forwarding so the TUI shows indexing progress.
 		// Use a non-blocking sink because the RAG file watcher is a

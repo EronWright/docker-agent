@@ -29,6 +29,7 @@ type mcpClient interface {
 	ListPrompts(ctx context.Context, request *mcp.ListPromptsParams) iter.Seq2[*mcp.Prompt, error]
 	GetPrompt(ctx context.Context, request *mcp.GetPromptParams) (*mcp.GetPromptResult, error)
 	SetElicitationHandler(handler tools.ElicitationHandler)
+	SetCreateMessageHandler(handler tools.CreateMessageHandler)
 	SetOAuthSuccessHandler(handler func())
 	SetManagedOAuth(managed bool)
 	SetToolListChangedHandler(handler func())
@@ -626,6 +627,10 @@ func encodeMedia(data []byte, mimeType string) tools.MediaContent {
 
 func (ts *Toolset) SetElicitationHandler(handler tools.ElicitationHandler) {
 	ts.mcpClient.SetElicitationHandler(handler)
+}
+
+func (ts *Toolset) SetCreateMessageHandler(handler tools.CreateMessageHandler) {
+	ts.mcpClient.SetCreateMessageHandler(handler)
 }
 
 func (ts *Toolset) SetOAuthSuccessHandler(handler func()) {

@@ -22,6 +22,7 @@ type sessionClient struct {
 	toolListChangedHandler   func()
 	promptListChangedHandler func()
 	elicitationHandler       tools.ElicitationHandler
+	createMessageHandler     tools.CreateMessageHandler
 	oauthSuccessHandler      func()
 	mu                       sync.RWMutex
 }
@@ -181,6 +182,35 @@ func (c *sessionClient) requestElicitation(ctx context.Context, req *gomcp.Elici
 	}
 
 	return handler(ctx, req)
+}
+
+// handleCreateMessageRequest forwards sampling/createMessage requests from the MCP server
+// to the registered handler.
+func (c *sessionClient) handleCreateMessageRequest(ctx context.Context, req *gomcp.CreateMessageRequest) (*gomcp.CreateMessageResult, error) {
+	slog.DebugContext(ctx, "Received sampling request from MCP server", "messages", len(req.Params.Messages))
+
+	c.mu.RLock()
+	handler := c.createMessageHandler
+	c.mu.RUnlock()
+
+	if handler == nil {
+		return nil, errors.New("no create message handler configured")
+	}
+
+	result, err := handler(ctx, req.Params)
+	if err != nil {
+		return nil, fmt.Errorf("sampling failed: %w", err)
+	}
+
+	return result, nil
+}
+
+// SetCreateMessageHandler sets the handler that processes sampling/createMessage requests
+// from the MCP server.
+func (c *sessionClient) SetCreateMessageHandler(handler tools.CreateMessageHandler) {
+	c.mu.Lock()
+	c.createMessageHandler = handler
+	c.mu.Unlock()
 }
 
 // SetOAuthSuccessHandler sets the handler called when an OAuth flow completes.

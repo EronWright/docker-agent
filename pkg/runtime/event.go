@@ -9,6 +9,7 @@ import (
 	"github.com/docker/docker-agent/pkg/hooks"
 	"github.com/docker/docker-agent/pkg/session"
 	"github.com/docker/docker-agent/pkg/tools"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type Event interface {
@@ -444,6 +445,42 @@ func ElicitationRequest(message, mode string, schema any, url, elicitationID str
 		ElicitationID: elicitationID,
 		Meta:          meta,
 		AgentContext:  newAgentContext(agentName),
+	}
+}
+
+// SamplingRequestEvent is sent when an MCP server requests LLM sampling
+type SamplingRequestEvent struct {
+	Type             string                  `json:"type"`
+	Messages         []SamplingEventMessage  `json:"messages"`
+	SystemPrompt     string                  `json:"system_prompt,omitempty"`
+	MaxTokens        int64                   `json:"max_tokens"`
+	ModelPreferences *mcp.ModelPreferences   `json:"model_preferences,omitempty"`
+	AgentContext
+}
+
+// SamplingEventMessage represents a message in the sampling request
+type SamplingEventMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+func SamplingRequest(params *mcp.CreateMessageParams, agentName string) Event {
+	// Convert mcp.SamplingMessage to SamplingEventMessage
+	msgs := make([]SamplingEventMessage, len(params.Messages))
+	for i, m := range params.Messages {
+		content := ""
+		if tc, ok := m.Content.(*mcp.TextContent); ok {
+			content = tc.Text
+		}
+		msgs[i] = SamplingEventMessage{Role: string(m.Role), Content: content}
+	}
+	return &SamplingRequestEvent{
+		Type:             "sampling_request",
+		Messages:         msgs,
+		SystemPrompt:     params.SystemPrompt,
+		MaxTokens:        params.MaxTokens,
+		ModelPreferences: params.ModelPreferences,
+		AgentContext:     AgentContext{AgentName: agentName},
 	}
 }
 

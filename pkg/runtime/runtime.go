@@ -1343,3 +1343,89 @@ func joinPrompts(a, b string) string {
 		return a + "\n\n" + b
 	}
 }
+
+// createMessageHandler handles sampling/createMessage requests from MCP servers.
+// It auto-approves requests and emits a SamplingRequestEvent for UI visibility.
+func (r *LocalRuntime) createMessageHandler(ctx context.Context, params *mcp.CreateMessageParams) (*mcp.CreateMessageResult, error) {
+	slog.DebugContext(ctx, "Sampling request received from MCP server", "messages", len(params.Messages))
+
+	// Best-effort: emit event for UI visibility; ignore if no stream is active.
+	_ = r.elicitation.send(SamplingRequest(params, r.CurrentAgentName()))
+
+	// Get current agent's model
+	a := r.CurrentAgent()
+	model := a.Model(ctx)
+	if model == nil {
+		return nil, fmt.Errorf("no model available for sampling")
+	}
+
+	// Convert sampling messages to chat messages
+	chatMessages := convertSamplingToChatMessages(params)
+
+	// Create chat completion
+	stream, err := model.CreateChatCompletionStream(ctx, chatMessages, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create chat completion: %w", err)
+	}
+	defer stream.Close()
+
+	// Collect response
+	var content strings.Builder
+	var stopReason string
+	for {
+		response, err := stream.Recv()
+		if err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return nil, err
+			}
+			// EOF signals normal end of stream
+			break
+		}
+		if len(response.Choices) > 0 {
+			choice := response.Choices[0]
+			content.WriteString(choice.Delta.Content)
+			if choice.FinishReason != "" {
+				stopReason = string(choice.FinishReason)
+			}
+		}
+	}
+
+	slog.DebugContext(ctx, "Sampling request completed", "content_length", content.Len(), "stop_reason", stopReason)
+
+	return &mcp.CreateMessageResult{
+		Role:       "assistant",
+		Content:    &mcp.TextContent{Text: content.String()},
+		Model:      model.ID().String(),
+		StopReason: stopReason,
+	}, nil
+}
+
+// convertSamplingToChatMessages converts MCP sampling messages to chat messages
+func convertSamplingToChatMessages(params *mcp.CreateMessageParams) []chat.Message {
+	var messages []chat.Message
+
+	// Add system prompt if provided
+	if params.SystemPrompt != "" {
+		messages = append(messages, chat.Message{
+			Role:    chat.MessageRoleSystem,
+			Content: params.SystemPrompt,
+		})
+	}
+
+	// Convert each sampling message
+	for _, m := range params.Messages {
+		role := chat.MessageRoleUser
+		if m.Role == "assistant" {
+			role = chat.MessageRoleAssistant
+		}
+		content := ""
+		if tc, ok := m.Content.(*mcp.TextContent); ok {
+			content = tc.Text
+		}
+		messages = append(messages, chat.Message{
+			Role:    role,
+			Content: content,
+		})
+	}
+	return messages
+}
