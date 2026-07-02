@@ -565,15 +565,27 @@ func BuildCommandCategories(ctx context.Context, application *app.App) []Categor
 			currentPromptInfo := promptInfo
 
 			mcpCommands = append(mcpCommands, Item{
-				ID:          "mcp.prompt." + promptName,
-				Label:       promptName,
-				Description: description,
-				Category:    "MCP Prompts",
-				Execute: func(string) tea.Cmd {
-					// If prompt has no required arguments, execute immediately
+				ID:           "mcp.prompt." + promptName,
+				Label:        promptName,
+				Description:  description,
+				Category:     "MCP Prompts",
+				SlashCommand: "/" + currentPromptName,
+				Immediate:    true,
+				Execute: func(arg string) tea.Cmd {
+					arg = strings.TrimSpace(arg)
+
+					// Slash command with argument: map to the first declared prompt argument.
+					if arg != "" && len(currentPromptInfo.Arguments) > 0 {
+						return core.CmdHandler(messages.MCPPromptMsg{
+							PromptName: currentPromptName,
+							Arguments:  map[string]string{currentPromptInfo.Arguments[0].Name: arg},
+						})
+					}
+
+					// No arg provided (palette click or slash with no arg): original behavior.
 					hasRequiredArgs := false
-					for _, arg := range currentPromptInfo.Arguments {
-						if arg.Required {
+					for _, a := range currentPromptInfo.Arguments {
+						if a.Required {
 							hasRequiredArgs = true
 							break
 						}
@@ -585,13 +597,12 @@ func BuildCommandCategories(ctx context.Context, application *app.App) []Categor
 							PromptName: currentPromptName,
 							Arguments:  make(map[string]string),
 						})
-					} else {
-						// Show parameter input dialog for prompts with required arguments
-						return core.CmdHandler(messages.ShowMCPPromptInputMsg{
-							PromptName: currentPromptName,
-							PromptInfo: currentPromptInfo,
-						})
 					}
+					// Show parameter input dialog for prompts with required arguments
+					return core.CmdHandler(messages.ShowMCPPromptInputMsg{
+						PromptName: currentPromptName,
+						PromptInfo: currentPromptInfo,
+					})
 				},
 			})
 		}
