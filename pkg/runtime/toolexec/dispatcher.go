@@ -174,6 +174,12 @@ type Dispatcher struct {
 	// [tools.ErrRecallNotSupported].
 	Recall func(ctx context.Context, sess *session.Session, a *agent.Agent, message string) error
 
+	// SequentialToolCalls executes each batch's calls one at a time, in the
+	// order the model emitted them, instead of fanning them out in parallel.
+	// For stateful, order-dependent tool backends where a later call in a
+	// batch depends on an earlier call's effects having landed.
+	SequentialToolCalls bool
+
 	confirmationMu sync.Mutex
 	approvalMu     sync.Mutex
 }
@@ -184,9 +190,10 @@ var (
 )
 
 // Process runs every tool call in calls, emitting events through em. Calls in
-// the same model batch are independent and execute in parallel; interactive
-// confirmations are still serialized because resume decisions are not keyed by
-// tool-call ID.
+// the same model batch are independent and execute in parallel — unless
+// [Dispatcher.SequentialToolCalls] is set, in which case they run one at a
+// time in emission order. Interactive confirmations are always serialized
+// because resume decisions are not keyed by tool-call ID.
 //
 // Returns (stopRun, message) when a post_tool_use hook signalled a
 // terminating verdict during this batch; the run loop then fans out the
@@ -210,7 +217,7 @@ func (d *Dispatcher) Process(ctx context.Context, sess *session.Session, calls [
 	var stopOnce sync.Once
 	var wg sync.WaitGroup
 	for i, tc := range calls {
-		wg.Go(func() {
+		run := func() {
 			c := d.newCall(sess, em, a, tc, toolByName)
 			outcome := c.run(batchCtx)
 			outcomes[i] = outcome
@@ -220,7 +227,16 @@ func (d *Dispatcher) Process(ctx context.Context, sess *session.Session, calls [
 			case outcome.StopRun:
 				stopOnce.Do(func() { cancelBatch(errBatchStoppedByHook) })
 			}
-		})
+		}
+		// Sequential mode still runs every call after a cancel/stop: the
+		// canceled batchCtx short-circuits them, and each still produces a
+		// tool response for the model — same contract as the parallel path,
+		// where all calls are already in flight when the batch is canceled.
+		if d.SequentialToolCalls {
+			run()
+		} else {
+			wg.Go(run)
+		}
 	}
 	wg.Wait()
 
