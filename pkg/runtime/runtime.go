@@ -224,6 +224,7 @@ type LocalRuntime struct {
 	managedOAuth              bool
 	unmanagedOAuthRedirectURI string
 	nonInteractive            bool
+	sequentialToolCalls       bool
 	startupInfoEmitted        bool                   // Track if startup info has been emitted to avoid unnecessary duplication
 	elicitationRequestCh      chan ElicitationResult // Channel for receiving elicitation responses
 	elicitation               elicitationBridge      // Owns the per-stream events channel for outbound elicitation requests
@@ -393,6 +394,18 @@ func WithUnmanagedOAuthRedirectURI(uri string) Opt {
 func WithNonInteractive(nonInteractive bool) Opt {
 	return func(r *LocalRuntime) {
 		r.nonInteractive = nonInteractive
+	}
+}
+
+// WithSequentialToolCalls makes the runtime execute each model batch's tool
+// calls one at a time, in the order the model emitted them, instead of
+// dispatching them in parallel. For stateful, order-dependent tool backends
+// where a later call in a batch depends on an earlier call's effects having
+// landed. The model still emits multi-call batches in a single turn; only
+// their execution is serialized.
+func WithSequentialToolCalls(sequential bool) Opt {
+	return func(r *LocalRuntime) {
+		r.sequentialToolCalls = sequential
 	}
 }
 
